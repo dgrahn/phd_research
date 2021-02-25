@@ -6,25 +6,27 @@ from func_timeout import func_set_timeout, FunctionTimedOut
 from datetime import datetime, timedelta
 from multiprocessing import Pool, Lock, Value
 
-ANTLR_PATH  = Path().joinpath('antlr_cpp').absolute() # Must be absolute
-START = datetime.now()
-
+ANTLR_PATH = Path().joinpath('antlr_cpp').absolute() # Must be absolute
+START = None
 counter = None
 
 def init(args):
     global counter
     counter = args
 
+    global START
+    START = datetime.now()
+
 @func_set_timeout(30)
 def process(input_file):
     return subprocess.check_output(
         [ 
-            f'java -Xmx2048M org.antlr.v4.gui.TestRig CPP14 translationUnit -tokens {input_file.absolute()}',
+            f'java -Xmx4096M org.antlr.v4.gui.TestRig CPP14 translationUnit -tokens {input_file.absolute()}',
             # 'CPP14', 'translationUnit', '-tokens',
             # str(input_file.absolute()),
         ],
         shell = True,
-        stderr = False,
+        stderr = subprocess.DEVNULL,
         cwd = ANTLR_PATH,
     )
 
@@ -42,8 +44,8 @@ def tokenize(c_file, token_file, max_index):
 
         print(f'{index:8,d} / {max_index:,d} -- {perc:3.2f}% [{elapsed}, {per.total_seconds():.5f} it., {rem} rem.] -- {c_file.name}')
 
-        # if index % 10_000 == 0:
-        #     subprocess.run(f'wall "{index} / {max_index} - {rem} rem."', shell=True)
+        if index % 10_000 == 0 and index != 0:
+            subprocess.run(f'wall "{index} / {max_index} - {rem} rem."', shell=True)
 
     except:
         pass
@@ -53,16 +55,21 @@ def tokenize(c_file, token_file, max_index):
     try:
         tokens = process(c_file)
         tokens = tokens.decode('utf-8').split('\r\n')
-        with open(output_file, 'w') as output:
+        with open(token_file, 'w') as output:
             output.write('\n'.join(tokens))
 
     except FunctionTimedOut:
-        print('***** Timed Out *****')
+        print('Timed Out:', c_file)
         subprocess.run(f'echo "{c_file}" >> timeout.txt', shell=True)
 
+    except subprocess.CalledProcessError as e:
+        print('Failed:', c_file)
+        subprocess.run(f'echo "{c_file}" >> failed.txt', shell=True)
+
     except Exception as e:
-        print('***** Exception *****')
+        print('Unknown:', c_file)
         subprocess.run(f'echo "{c_file}" >> errors.txt', shell=True)
+        raise e
 
 
 def main(args):
@@ -70,9 +77,11 @@ def main(args):
     print('Counting files...')
     files = []
 
+    start = datetime.now()
     for i, c_file in enumerate(args.input.rglob('*.c*')):
         if i % 100_000 == 0:
-            print(f'\t{i:,d}')
+            print(f'\t{i:,d} -- {datetime.now() - start}')
+            start = datetime.now()
 
         parent = c_file.parent.relative_to(args.input)
         token_file = args.output.joinpath(parent).joinpath(c_file.stem + '.tokens')
