@@ -15,21 +15,20 @@ def init(args):
     global counter
     counter = args
 
-
 @func_set_timeout(30)
 def process(input_file):
     return subprocess.check_output(
         [ 
-            # java org.antlr.v4.gui.TestRig %*
-            'grun', 'CPP14', 'translationUnit', '-tokens',
-            str(input_file.absolute()),
+            f'java -Xmx2048M org.antlr.v4.gui.TestRig CPP14 translationUnit -tokens {input_file.absolute()}',
+            # 'CPP14', 'translationUnit', '-tokens',
+            # str(input_file.absolute()),
         ],
         shell = True,
         stderr = False,
         cwd = ANTLR_PATH,
     )
 
-def tokenize(output_dir, c_file, max_index):
+def tokenize(c_file, token_file, max_index):   
     try:
         global counter
         with counter.get_lock():
@@ -42,45 +41,66 @@ def tokenize(output_dir, c_file, max_index):
         rem = (max_index - index) * per
 
         print(f'{index:8,d} / {max_index:,d} -- {perc:3.2f}% [{elapsed}, {per.total_seconds():.5f} it., {rem} rem.] -- {c_file.name}')
+
+        # if index % 10_000 == 0:
+        #     subprocess.run(f'wall "{index} / {max_index} - {rem} rem."', shell=True)
+
     except:
         pass
 
-    output_file = output_dir.joinpath(c_file.parent).joinpath(c_file.stem + '.tokens')
-    if output_file.exists(): return
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         tokens = process(c_file)
-        tokens = tokens.decode('utf-8').split('\r\n')[2:]
+        tokens = tokens.decode('utf-8').split('\r\n')
         with open(output_file, 'w') as output:
             output.write('\n'.join(tokens))
+
     except FunctionTimedOut:
         print('***** Timed Out *****')
+        subprocess.run(f'echo "{c_file}" >> timeout.txt', shell=True)
+
     except Exception as e:
-        print(e)
+        print('***** Exception *****')
+        subprocess.run(f'echo "{c_file}" >> errors.txt', shell=True)
 
 
 def main(args):
+    # Count files
     print('Counting files...')
-    files = list(args.input.rglob('*.c*'))
-    n_files = len(files)
-    print(f'There are {n_files:,d} C files.')
+    files = []
 
+    for i, c_file in enumerate(args.input.rglob('*.c*')):
+        if i % 100_000 == 0:
+            print(f'\t{i:,d}')
+
+        parent = c_file.parent.relative_to(args.input)
+        token_file = args.output.joinpath(parent).joinpath(c_file.stem + '.tokens')
+
+        if token_file.exists(): continue
+        files.append((c_file, token_file))
+
+    n_files = len(files)
+    print(f'There are {n_files:,d} to be processed.')
+
+    # Process the files
     counter = Value('i', 0)
 
     with Pool(args.num_processes, initializer=init, initargs=(counter,)) as p:
         p.starmap(tokenize, [
-            (args.output, f, n_files) for f in files
+            (f[0], f[1], n_files) for f in files
         ])
+    
+    # subprocess.run(f'wall "Parsing complete for {args.input}"', shell=True)
 
 
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', type=Path, default='/data/datasets/WILD')
+    parser.add_argument('--input', type=Path, default='/data/datasets/input/WILD')
     parser.add_argument('--output', type=Path, default='/data/datasets/tokens/WILD')
-    parser.add_argument('--num_processes', type=int, default=2)
+    parser.add_argument('--num_processes', type=int, default=20)
 
     args = parser.parse_args()
     main(args)

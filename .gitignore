@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Ignore antlr generated files
+/parsing/antlr_cpp/*.class
+/parsing/antlr_cpp/*.java
+/parsing/antlr_cpp/*.interp
+/parsing/antlr_cpp/*.tokens
+
+# Ignore screen logs
+screenlog.*
