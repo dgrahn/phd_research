@@ -2,7 +2,6 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
-from func_timeout import func_set_timeout, FunctionTimedOut
 from datetime import datetime, timedelta
 from multiprocessing import Pool, Lock, Value
 
@@ -17,7 +16,6 @@ def init(args):
     global START
     START = datetime.now()
 
-@func_set_timeout(30)
 def process(input_file):
     return subprocess.check_output(
         [ 
@@ -28,6 +26,7 @@ def process(input_file):
         shell = True,
         stderr = subprocess.DEVNULL,
         cwd = ANTLR_PATH,
+        timeout = 30,
     )
 
 def tokenize(c_file, token_file, max_index):   
@@ -58,7 +57,7 @@ def tokenize(c_file, token_file, max_index):
         with open(token_file, 'w') as output:
             output.write('\n'.join(tokens))
 
-    except FunctionTimedOut:
+    except subprocess.TimeoutExpired:
         print('Timed Out:', c_file)
         subprocess.run(f'echo "{c_file}" >> timeout.txt', shell=True)
 
@@ -87,6 +86,7 @@ def main(args):
         token_file = args.output.joinpath(parent).joinpath(c_file.stem + '.tokens')
 
         if token_file.exists(): continue
+
         files.append((c_file, token_file))
 
     n_files = len(files)
