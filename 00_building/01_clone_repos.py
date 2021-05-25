@@ -6,7 +6,7 @@ from datetime import datetime
 
 print('Starting at:', datetime.now())
 
-repos = pd.read_csv('repos.csv')#.sort_values(by='stars', ascending=False)
+repos = pd.read_csv('repos.csv')
 base = Path('repos')
 base.mkdir(exist_ok=True)
 
