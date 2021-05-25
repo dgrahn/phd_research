@@ -4,8 +4,11 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from multiprocessing import Pool, Lock, Value
+import pandas as pd
 
 ANTLR_PATH = Path().joinpath('antlr_cpp').absolute() # Must be absolute
+FILES_PATH = Path('files.txt')
+
 START = None
 counter = None
 
@@ -41,7 +44,7 @@ def tokenize(c_file, token_file, max_index):
         per = elapsed / (index + 1e-10)
         rem = (max_index - index) * per
 
-        print(f'{index:8,d} / {max_index:,d} -- {perc:3.2f}% [{elapsed}, {per.total_seconds():.5f} it., {rem} rem.] -- {c_file.name}')
+        print(f'{index:8,d} / {max_index:,d} -- {perc:3.2f}% [{elapsed}, {per.total_seconds():.5f} it., {rem} rem.] -- {c_file.name}', end='')
 
         if index % 10_000 == 0 and index != 0:
             subprocess.run(f'wall "{index} / {max_index} - {rem} rem."', shell=True)
@@ -69,25 +72,65 @@ def tokenize(c_file, token_file, max_index):
         print('Unknown:', c_file)
         subprocess.run(f'echo "{c_file}" >> errors.txt', shell=True)
         raise e
+    
+def filter_files(start, unfiltered, failed):
+    # Filter the files
+    filtered = []
 
+    # Convert failed to a dictionary for faster lookups
+    print('Failed:', len(failed))
+    failed = { f: True for f in failed }
 
-def main(args):
-    # Count files
-    print('Counting files...')
-    files = []
-
-    start = datetime.now()
-    for i, c_file in enumerate(args.input.rglob('*.c*')):
+    print('Filtering files...')
+    for i, (c_file, token_file) in enumerate(unfiltered):
         if i % 100_000 == 0:
             print(f'\t{i:,d} -- {datetime.now() - start}')
             start = datetime.now()
+        if Path(token_file).exists(): continue
+        if c_file in failed:
+            continue
 
-        parent = c_file.parent.relative_to(args.input)
-        token_file = args.output.joinpath(parent).joinpath(c_file.stem + '.tokens')
+        filtered.append((Path(c_file), Path(token_file)))
+    
+    return filtered
 
-        if token_file.exists(): continue
+def main(args):
+    # Count files
+    start = datetime.now()
 
-        files.append((c_file, token_file))
+    failed = open('failed.txt').readlines() + open('timeout.txt').readlines()
+
+    if args.create_index:
+        # Get the C files
+        c_files = []
+        print('Loading C files...')
+        for i, c_file in enumerate(args.input.rglob('*.c*')):
+            if i % 100_000 == 0:
+                print(f'\t{i:,d} -- {datetime.now() - start}')
+                start = datetime.now()
+
+            parent = c_file.parent.relative_to(args.input)
+            token_file = args.output.joinpath(parent).joinpath(c_file.stem + '.tokens')
+            c_files.append((c_file, token_file))
+        
+        # Filter the files and save
+        files = filter_files(start, c_files, failed)
+        df = pd.DataFrame(files, columns=['c_file', 'token_file'])
+        df.to_csv('files.csv', index=False)
+    
+    else:
+        # Load the index
+        print('Loading Index...')
+        df = pd.read_csv('files.csv')
+        unfiltered = df.values.tolist()
+        print(f'\tThere are {len(unfiltered):,d} files in the index.')
+        
+        # Refilter and maybe save
+        files = filter_files(start, unfiltered, failed)
+        if len(files) != len(unfiltered):
+            print('Saving filtered...')
+            df = pd.DataFrame(files, columns=['c_file', 'token_file'])
+            df.to_csv('files.csv', index=False)
 
     n_files = len(files)
     print(f'There are {n_files:,d} to be processed.')
@@ -99,10 +142,6 @@ def main(args):
         p.starmap(tokenize, [
             (f[0], f[1], n_files) for f in files
         ])
-    
-    # subprocess.run(f'wall "Parsing complete for {args.input}"', shell=True)
-
-
 
 
 if __name__ == "__main__":
@@ -110,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument('--input', type=Path, default='/data/datasets/input/WILD')
     parser.add_argument('--output', type=Path, default='/data/datasets/tokens/WILD')
     parser.add_argument('--num_processes', type=int, default=20)
+    parser.add_argument('--create_index', action='store_true')
 
     args = parser.parse_args()
     main(args)
