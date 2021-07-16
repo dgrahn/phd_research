@@ -139,24 +139,3 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
-
-# input_file = Path().joinpath('WILD').joinpath('old_func.c')
-# print(input_file.absolute())
-
-# output = subprocess.check_output(
-#     [ 
-#         'grun', 'CPP14', 'translationUnit', '-tokens',
-#         str(input_file.absolute()),
-#     ],
-#     shell = True,
-#     cwd = Path().joinpath('antlr_cpp').absolute(),
-# )
-# # output = subprocess.check_output(
-# #     [
-# #         'grun', '-help',# CPP14 translationUni -tokens',
-# #         # str(input_file.absolute())
-# #     ],
-# #     # cwd = Path().joinpath('antlr_cpp').absolute()
-# # )
-
-# print('Output:', output, type(output))

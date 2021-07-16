@@ -12,7 +12,12 @@ class JsonlReader:
                 while True:
                     line = f.readline()
                     if not line: break
-                    yield json.loads(line)
+
+                    try:
+                        yield json.loads(line)
+                    except json.decoder.JSONDecodeError as e:
+                        print(e)
+                        print(line)
     
     def __len__(self):
         if not self.files: return 0
